@@ -47,15 +47,27 @@ exports.verifyOTP = (email, otp) => {
   return { valid: true, message: 'OTP verified successfully' };
 };
 
-exports.sendOTPEmail = async (email, otp) => {
+exports.sendOTPEmail = async (email, otp, type = 'Registration OTP') => {
+  let subject, heading, message;
+  
+  if (type === 'Password Reset OTP') {
+    subject = 'Syncly - Password Reset OTP';
+    heading = 'Reset Your Password';
+    message = 'You requested to reset your password. To continue with the password reset process, please use the following OTP:';
+  } else {
+    subject = 'Syncly - Your Registration OTP';
+    heading = 'Welcome to Syncly!';
+    message = 'Thank you for registering with us. To complete your registration, please use the following OTP:';
+  }
+  
   const mailOptions = {
     from: process.env.EMAIL_USER,
     to: email,
-    subject: 'Syncly - Your Registration OTP',
+    subject: subject,
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
-        <h2 style="color: #333;">Welcome to Syncly!</h2>
-        <p>Thank you for registering with us. To complete your registration, please use the following OTP:</p>
+        <h2 style="color: #333;">${heading}</h2>
+        <p>${message}</p>
         <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 5px;">
           ${otp}
         </div>
