@@ -1,10 +1,15 @@
 const nodemailer = require('nodemailer');
 const otpGenerator = require('otp-generator');
 
+// Store OTPs with their expiration time
 const otpStorage = {};
+
+// OTP expiration time in milliseconds (1 minute)
+const OTP_EXPIRY_TIME = 60 * 1000;
 
 const transporter = nodemailer.createTransport({
   service: process.env.EMAIL_SERVICE,
+  secure: true, // Use HTTPS
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD
@@ -19,9 +24,10 @@ exports.generateOTP = (email) => {
     digits: true
   });
   
+  // Store OTP with 1-minute expiration time
   otpStorage[email] = {
     otp,
-    expiresAt: new Date(Date.now() + 15 * 60 * 1000) 
+    expiresAt: new Date(Date.now() + OTP_EXPIRY_TIME)
   };
   
   return otp;
@@ -33,16 +39,21 @@ exports.verifyOTP = (email, otp) => {
   if (!otpData) {
     return { valid: false, message: 'No OTP found for this email' };
   }
-  
+    // Check if OTP has expired
   if (new Date() > otpData.expiresAt) {
     delete otpStorage[email]; 
-    return { valid: false, message: 'OTP has expired' };
+    return { 
+      valid: false, 
+      message: 'OTP has expired. Please request a new OTP using the resend option.',
+      expired: true
+    };
   }
   
   if (otpData.otp !== otp) {
-    return { valid: false, message: 'Invalid OTP' };
+    return { valid: false, message: 'Invalid OTP. Please try again.' };
   }
   
+  // Delete OTP after successful verification
   delete otpStorage[email];
   return { valid: true, message: 'OTP verified successfully' };
 };
@@ -67,11 +78,11 @@ exports.sendOTPEmail = async (email, otp, type = 'Registration OTP') => {
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 5px;">
         <h2 style="color: #333;">${heading}</h2>
-        <p>${message}</p>
-        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 5px;">
+        <p>${message}</p>        <div style="background-color: #f5f5f5; padding: 15px; border-radius: 5px; text-align: center; margin: 20px 0; font-size: 24px; font-weight: bold; letter-spacing: 5px;">
           ${otp}
         </div>
-        <p>This OTP is valid for 15 minutes.</p>
+        <p style="color: #e74c3c; font-weight: bold;">⚠️ This OTP is valid for only 1 minute.</p>
+        <p>If the OTP expires, you will need to request a new one using the resend option.</p>
         <p>If you didn't request this OTP, please ignore this email.</p>
         <p style="margin-top: 30px; font-size: 12px; color: #777;">
           This is an automated email. Please do not reply to this email.

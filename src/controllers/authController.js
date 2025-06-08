@@ -1,16 +1,34 @@
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { generateOTP, sendOTPEmail, verifyOTP } = require('../utils/otpUtils');
+const { isValidEmail, isValidPassword, getPasswordValidationErrors } = require('../utils/validationUtils');
 
 exports.registerOTP = async (req, res) => {
   try {
     const { username, email, password } = req.body;
-=
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    if (!isValidPassword(password)) {
+      const errors = getPasswordValidationErrors(password);
+      return res.status(400).json({
+        success: false,
+        message: 'Password does not meet requirements',
+        errors
+      });
+    }
+
     const existingUser = await User.findOne({ 
       $or: [{ email }, { username }] 
     });
     
-    if (existingUser) {      if (existingUser.email === email && !existingUser.isVerified) {
+    if (existingUser) {
+      if (existingUser.email === email && !existingUser.isVerified) {
         const otp = generateOTP(email);
         await sendOTPEmail(email, otp, 'Registration OTP');
         
@@ -25,14 +43,13 @@ exports.registerOTP = async (req, res) => {
         success: false, 
         message: 'User with this email or username already exists' 
       });
-    }
-
-    const user = new User({
+    }    const user = new User({
       username,
       email,
       password,
       isVerified: false
-    });    await user.save();
+    });
+    await user.save();
 
     const otp = generateOTP(email);
     const emailResult = await sendOTPEmail(email, otp, 'Registration OTP');
@@ -64,12 +81,20 @@ exports.verifyAndRegister = async (req, res) => {
   try {
     const { email, otp } = req.body;
     
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+    
     const otpVerification = verifyOTP(email, otp);
     
     if (!otpVerification.valid) {
       return res.status(400).json({
         success: false,
-        message: otpVerification.message
+        message: otpVerification.message,
+        expired: otpVerification.expired || false
       });
     }
     
@@ -84,8 +109,7 @@ exports.verifyAndRegister = async (req, res) => {
     
     user.isVerified = true;
     await user.save();
-    
-    const token = jwt.sign(
+      const token = jwt.sign(
       { id: user._id }, 
       process.env.JWT_SECRET, 
       { expiresIn: '30d' }
@@ -94,7 +118,7 @@ exports.verifyAndRegister = async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000, 
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || req.secure,
       sameSite: 'strict'
     });
 
@@ -109,31 +133,37 @@ exports.verifyAndRegister = async (req, res) => {
     });
   } catch (error) {
     console.error('OTP verification error:', error);
-    return res.status(500).json({
-      success: false,
+    return res.status(500).json({      success: false,
       message: 'Error during OTP verification',
       error: error.message
-    });  }
+    });
+  }
 };
 
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
     const user = await User.findOne({ email });
     
     if (!user) {
-      return res.status(401).json({
-        success: false,
+      return res.status(401).json({        success: false,
         message: 'Invalid email or password'
       });
-    }    if (!user.isVerified) {
-      const otp = generateOTP(email);
-      await sendOTPEmail(email, otp, 'Registration OTP');
-      
+    }
+      if (!user.isVerified) {
+      // If account is not verified, inform the user they need to verify
+      // but don't automatically send a new OTP
       return res.status(403).json({
         success: false,
-        message: 'Account not verified. A new OTP has been sent to your email.',
+        message: 'Account not verified. Please verify your account using the OTP sent during registration or request a new one.',
         requiresVerification: true,
         userId: user._id
       });
@@ -150,9 +180,7 @@ exports.login = async (req, res) => {
 
     user.isOnline = true;
     user.lastSeen = Date.now();
-    await user.save();
-
-    const token = jwt.sign(
+    await user.save();    const token = jwt.sign(
       { id: user._id }, 
       process.env.JWT_SECRET, 
       { expiresIn: '30d' }
@@ -161,7 +189,7 @@ exports.login = async (req, res) => {
     res.cookie('token', token, {
       httpOnly: true,
       maxAge: 30 * 24 * 60 * 60 * 1000, 
-      secure: process.env.NODE_ENV === 'production',
+      secure: process.env.NODE_ENV === 'production' || req.secure,
       sameSite: 'strict'
     });
 
@@ -222,10 +250,10 @@ exports.getCurrentUser = async (req, res) => {
       });
     }
 
-    return res.status(200).json({
-      success: true,
+    return res.status(200).json({      success: true,
       user
-    });  } catch (error) {
+    });
+  } catch (error) {
     console.error('Get current user error:', error);
     return res.status(500).json({
       success: false,
@@ -235,7 +263,6 @@ exports.getCurrentUser = async (req, res) => {
   }
 };
 
-// Request password reset - send OTP to email
 exports.requestPasswordReset = async (req, res) => {
   try {
     const { email } = req.body;
@@ -247,7 +274,13 @@ exports.requestPasswordReset = async (req, res) => {
       });
     }
 
-    // Check if user exists
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
     const user = await User.findOne({ email });
     
     if (!user) {
@@ -257,7 +290,6 @@ exports.requestPasswordReset = async (req, res) => {
       });
     }
 
-    // Generate and send OTP
     const otp = generateOTP(email);
     const emailResult = await sendOTPEmail(email, otp, 'Password Reset OTP');
 
@@ -283,7 +315,6 @@ exports.requestPasswordReset = async (req, res) => {
   }
 };
 
-// Verify OTP for password reset
 exports.verifyPasswordResetOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -295,7 +326,13 @@ exports.verifyPasswordResetOTP = async (req, res) => {
       });
     }
     
-    // Check if user exists
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+    
     const user = await User.findOne({ email });
     
     if (!user) {
@@ -304,14 +341,13 @@ exports.verifyPasswordResetOTP = async (req, res) => {
         message: 'User not found'
       });
     }
-    
-    // Verify the OTP
     const otpVerification = verifyOTP(email, otp);
     
     if (!otpVerification.valid) {
       return res.status(400).json({
         success: false,
-        message: otpVerification.message
+        message: otpVerification.message,
+        expired: otpVerification.expired || false
       });
     }
     
@@ -330,7 +366,6 @@ exports.verifyPasswordResetOTP = async (req, res) => {
   }
 };
 
-// Reset password after OTP verification
 exports.resetPassword = async (req, res) => {
   try {
     const { email, newPassword, confirmPassword } = req.body;
@@ -342,6 +377,22 @@ exports.resetPassword = async (req, res) => {
       });
     }
     
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+    
+    if (!isValidPassword(newPassword)) {
+      const errors = getPasswordValidationErrors(newPassword);
+      return res.status(400).json({
+        success: false,
+        message: 'Password does not meet requirements',
+        errors
+      });
+    }
+    
     if (newPassword !== confirmPassword) {
       return res.status(400).json({
         success: false,
@@ -349,7 +400,6 @@ exports.resetPassword = async (req, res) => {
       });
     }
     
-    // Find the user
     const user = await User.findOne({ email });
     
     if (!user) {
@@ -359,7 +409,6 @@ exports.resetPassword = async (req, res) => {
       });
     }
     
-    // Update password
     user.password = newPassword;
     await user.save();
     
@@ -372,6 +421,54 @@ exports.resetPassword = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Error resetting password',
+      error: error.message
+    });
+  }
+};
+
+exports.resendOTP = async (req, res) => {
+  try {
+    const { email, otpType } = req.body;
+
+    if (!isValidEmail(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    const user = await User.findOne({ email });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const type = otpType === 'password-reset' ? 'Password Reset OTP' : 'Registration OTP';
+    
+    const otp = generateOTP(email);
+    const emailResult = await sendOTPEmail(email, otp, type);
+
+    if (!emailResult.success) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP email',
+        error: emailResult.error
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `New ${type} has been sent to your email`,
+      email
+    });
+  } catch (error) {
+    console.error('Resend OTP error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error resending OTP',
       error: error.message
     });
   }

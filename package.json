@@ -2,11 +2,12 @@
   "name": "syncly",
   "version": "1.0.0",
   "description": "a backend for discord type live chatting app",
-  "main": "index.js",
-  "scripts": {
+  "main": "index.js",  "scripts": {
     "test": "node vansh",
     "start": "node index.js",
-    "dev": "nodemon index.js"
+    "dev": "nodemon index.js",
+    "ssl:gen": "node generate-ssl-certs.js",
+    "dev:secure": "npm run ssl:gen && nodemon index.js"
   },
   "repository": {
     "type": "git",
