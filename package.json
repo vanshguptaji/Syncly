@@ -2,7 +2,8 @@
   "name": "syncly",
   "version": "1.0.0",
   "description": "a backend for discord type live chatting app",
-  "main": "index.js",  "scripts": {
+  "main": "index.js",
+  "scripts": {
     "test": "node vansh",
     "start": "node index.js",
     "dev": "nodemon index.js",
@@ -35,6 +36,7 @@
     "nodemailer": "^7.0.3",
     "nodemon": "^3.1.10",
     "otp-generator": "^4.0.1",
+    "selfsigned": "^2.4.1",
     "socket.io": "^4.8.1"
   }
 }
